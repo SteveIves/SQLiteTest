@@ -40,7 +40,7 @@ proc
     ;Add three messages to the database
     if (ok)
     begin
-        Console.WriteLine("Adding three messages to the message store")
+        Console.WriteLine("Adding messages to the message store")
 
         data MessageID, Int64
         data ix = 0
@@ -58,6 +58,8 @@ proc
             end
             endtry
         end
+        msgstore.AddMessage("This is a really really really really really really really really really really really really really really long message",MessageID)
+        Console.WriteLine(" - Added message {0}",MessageID)
     end
 
     ;Find out how many messages in the database
@@ -70,17 +72,7 @@ proc
     if (ok && messagecount)
     begin
         Console.WriteLine("Read and display all messages")
-
-; BUG: client becomes null!!!!
-;        data results = client.GetAllMessages()
-;        foreach data result in results as @KeyValuePair<Int64,String>
-;        begin
-;            Console.WriteLine(String.Format("{0}: {1}",result.Key,result.Value))
-;        end
-
-        data results = msgstore.GetAllMessages()
-        data result, @KeyValuePair<Int64,String>
-        foreach result in results
+        foreach data result in msgstore.GetAllMessages() as KeyValuePair<Int64,String>
         begin
             Console.WriteLine(" - Message {0}: {1}",result.Key,result.Value)
         end

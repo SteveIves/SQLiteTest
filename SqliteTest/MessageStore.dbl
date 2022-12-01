@@ -32,7 +32,7 @@ namespace SqliteTest
 
             ;Create the Messages table if it does not exist
             disposable data cmd, @SqliteCommand, connection.CreateCommand()
-            cmd.CommandText = "CREATE TABLE IF NOT EXISTS Messages (MessageID INTEGER PRIMARY KEY, Message VARCHAR(20))"
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS Messages (MessageID INTEGER PRIMARY KEY, Message TEXT)"
             cmd.ExecuteNonQuery()
 
             ;NOTE: Under the hood an INTEGER PRIMARY KEY column is an alias to the ROWID column and as such
