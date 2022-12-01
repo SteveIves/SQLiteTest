@@ -1,0 +1,142 @@
+
+import Microsoft.Data.Sqlite
+import System
+import System.Data
+import System.IO
+import System.Collections.Generic
+
+import SqliteTest
+
+main
+proc
+    data ok = true
+    data msgstore, @MessageStore
+    data msgstoreopen = false
+    data messagecount = 0
+
+    ;Determine the database file name
+    data dbfile = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"messages.db"))
+
+    ;Open or create and open the database
+    try
+    begin
+        msgstore = new MessageStore(dbfile)
+        msgstoreopen = true
+    end
+    catch (e, @Exception)
+    begin
+        Console.WriteLine("ERROR: Failed to open message store!")
+        ok = false
+    end
+    endtry
+
+    ;Find out how many messages in the database
+    if (ok)
+    begin
+        messagecount = msgstore.GetMessageCount()
+        Console.WriteLine("Message store has {0} messages",messagecount)
+    end
+
+    ;Add three messages to the database
+    if (ok)
+    begin
+        Console.WriteLine("Adding three messages to the message store")
+
+        data MessageID, Int64
+        data ix = 0
+        for ix from 1 thru 3
+        begin
+            try
+            begin
+                msgstore.AddMessage("This is a message",MessageID)
+                Console.WriteLine(" - Added message {0}",MessageID)
+            end
+            catch (e, @Exception)
+            begin
+                Console.WriteLine("ERROR: Failed to add message to store!")
+                exitloop
+            end
+            endtry
+        end
+    end
+
+    ;Find out how many messages in the database
+    if (ok)
+    begin
+        messagecount = msgstore.GetMessageCount()
+        Console.WriteLine("Message store has {0} messages",messagecount)
+    end
+
+    if (ok && messagecount)
+    begin
+        Console.WriteLine("Read and display all messages")
+
+; BUG: client becomes null!!!!
+;        data results = client.GetAllMessages()
+;        foreach data result in results as @KeyValuePair<Int64,String>
+;        begin
+;            Console.WriteLine(String.Format("{0}: {1}",result.Key,result.Value))
+;        end
+
+        data results = msgstore.GetAllMessages()
+        data result, @KeyValuePair<Int64,String>
+        foreach result in results
+        begin
+            Console.WriteLine(" - Message {0}: {1}",result.Key,result.Value)
+        end
+    end
+
+    if (ok && messagecount)
+    begin
+        Console.WriteLine("Read and delete individual messages")
+
+        data message, @Tuple<Int64,string>
+        repeat
+        begin
+            try
+            begin
+                message = msgstore.GetFirstMessage()
+
+                if (message == ^null) then
+                begin
+                    Console.WriteLine(" - No more messages!")
+                    exitloop
+                end
+                else
+                begin
+                    Console.WriteLine(" - Message {0}: {1}",message.Item1,message.Item2)
+
+                    if (msgstore.DeleteMessage(message.Item1)) then
+                    begin
+                        Console.WriteLine("   - Deleted")
+                    end
+                    else
+                    begin
+                        Console.WriteLine("   - Failed to delete")
+                    end
+                end
+            end
+            catch (e, @Exception)
+            begin
+                exitloop
+            end
+            endtry
+        end
+    end
+
+    ;Find out how many messages in the database
+    if (ok)
+    begin
+        messagecount = msgstore.GetMessageCount()
+        Console.WriteLine("Message store has {0} messages",messagecount)
+    end
+
+    if (msgstoreopen)
+    begin
+        msgstore.Close()
+    end
+
+    Console.Write("Press a key: ")
+    Console.ReadKey()
+
+endmain

@@ -1,0 +1,246 @@
+
+import Microsoft.Data.Sqlite
+import System
+import System.Collections.Generic
+import System.Data
+import System.IO
+
+namespace SqliteTest
+
+    ;;; <summary>
+    ;;; A local store for received messages.
+    ;;; Under the hood a SQLite database is used.
+    ;;; </summary>
+	public class MessageStore
+	
+        private connection, @SQLiteConnection
+
+        ;;; <summary>
+        ;;; Construct a new message store client
+        ;;; </summary>
+        ;;; <param name="databaseFile">File spec of SQLite database to open or create</param>
+        public method MessageStore
+            required in databaseFile, string
+        proc
+            ;Build a connection string based on the provided database file spec
+            data csb = new SqliteConnectionStringBuilder(String.Format("DataSource={0}",databaseFile)) { Mode = SqliteOpenMode.ReadWriteCreate }
+            data connectString = csb.ToString()
+
+            ;Connect to the Sqlite database, creating it if it does not exist
+            connection = new SqliteConnection(connectString)
+            connection.Open()
+
+            ;Create the Messages table if it does not exist
+            disposable data cmd, @SqliteCommand, connection.CreateCommand()
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS Messages (MessageID INTEGER PRIMARY KEY, Message VARCHAR(20))"
+            cmd.ExecuteNonQuery()
+
+            ;NOTE: Under the hood an INTEGER PRIMARY KEY column is an alias to the ROWID column and as such
+            ;values are automatically assigned. ROWID is a 64-bit signed integer, so the maximum value is
+            ;9,223,372,036,854,775,807 - so, very unlikely to run out, but if it ever does, SQLite starts
+            ;reusing ROWID's from deleted rows. Because we delete rows once messages are processed, it
+            ;should never become a problem.
+            ;https://www.sqlitetutorial.net/sqlite-autoincrement/
+
+        endmethod
+
+        ;;; <summary>
+        ;;; Close the message store
+        ;;; </summary>
+        public method Close, void
+        proc
+            if (connection != ^null && connection.State == ConnectionState.open)
+            begin
+                try
+                begin
+                    connection.Close()
+                end
+                catch (e, @Exception)
+                begin
+                    nop
+                end
+                finally
+                begin
+                    connection.Dispose()
+                end
+                endtry
+            end
+        endmethod
+
+        ;;; <summary>
+        ;;; Add a new message to the message store
+        ;;; </summary>
+        ;;; <param name="Message">Message to add</param>
+        ;;; <returns>True on success, else false</returns>
+        public method AddMessage, boolean
+            required in Message, string
+        proc
+            data MessageID, Int64
+            mreturn this.AddMessage(Message,MessageID)
+        endmethod
+
+        ;;; <summary>
+        ;;; Add a new message to the message store and return the message ID
+        ;;; </summary>
+        ;;; <param name="Message">Message to add</param>
+        ;;; <returns>True on success, else false</returns>
+        public method AddMessage, boolean
+            required in Message, string
+            required out MessageID, Int64
+        proc
+            data ok = true
+            MessageID = 0
+            disposable data cmd = connection.CreateCommand()
+            try
+            begin
+                cmd.CommandText = String.Format("INSERT INTO Messages (Message) VALUES ('{0}');",Message)
+                cmd.ExecuteNonQuery()
+            end
+            catch (e, @Exception)
+            begin
+                ok = false
+            end
+            endtry
+
+            if (ok)
+            begin
+                cmd.CommandText = "SELECT LAST_INSERT_ROWID();"
+                disposable data dr, @SqliteDataReader, cmd.ExecuteReader()
+                if (dr.HasRows)
+                begin
+                    while (dr.Read())
+                    begin
+                        MessageID = dr.GetInt64(0)
+                    end
+                end
+            end
+
+            mreturn ok
+
+        endmethod
+        
+        ;;; <summary>
+        ;;; Get a message by ID
+        ;;; </summary>
+        ;;; <param name="MessageID">Message ID to get</param>
+        ;;; <returns>Message or null</returns>
+        public method GetMessage, string
+            required in MessageID, Int64
+        proc
+            data result, string
+            disposable data cmd, @SqliteCommand, connection.CreateCommand()
+            cmd.CommandText = String.Format("SELECT Message FROM Messages WHERE MessageID={0}",MessageID)
+            disposable data dr, @SqliteDataReader, cmd.ExecuteReader()
+            if (dr.HasRows)
+            begin
+                dr.Read()
+                result = dr.GetString(0)
+            end
+            mreturn result
+        endmethod
+
+        ;;; <summary>
+        ;;; Get the number of messages in the message store
+        ;;; </summary>
+        ;;; <returns>Number of messages</returns>
+        public method GetMessageCount, int
+        proc
+            data rows = 0
+            disposable data cmd, @SqliteCommand, connection.CreateCommand()
+            cmd.CommandText = "SELECT COUNT(Message) FROM Messages"
+            disposable data dr, @SqliteDataReader, cmd.ExecuteReader()
+            if (dr.HasRows)
+            begin
+                while (dr.Read())
+                begin
+                    rows = dr.GetInt64(0)
+                end
+            end
+            mreturn rows
+        endmethod
+
+        ;;; <summary>
+        ;;; Get all messages in the message store
+        ;;; </summary>
+        ;;; <returns>Disctionary of messages</returns>
+        public method GetAllMessages, @Dictionary<Int64, string>
+        proc
+            data results = new Dictionary<Int64, string>()
+            disposable data cmd, @SqliteCommand, connection.CreateCommand()
+            cmd.CommandText = "SELECT * FROM Messages"
+            disposable data dr, @SqliteDataReader, cmd.ExecuteReader()
+            if (dr.HasRows)
+            begin
+                while (dr.Read())
+                begin
+                    results.Add(dr.GetInt64(0), dr.GetString(1))
+                end
+            end
+            mreturn results
+        endmethod
+
+        ;;; <summary>
+        ;;; Get the message with the lowest message ID
+        ;;; </summary>
+        ;;; <returns>Message ID and message</returns>
+        public method GetFirstMessage, @Tuple<Int64,string>
+        proc
+            data result, @Tuple<Int64,string>
+            disposable data cmd, @SqliteCommand, connection.CreateCommand()
+            cmd.CommandText = "SELECT * FROM Messages LIMIT 1"
+            disposable data dr, @SqliteDataReader, cmd.ExecuteReader()
+            if (dr.HasRows)
+            begin
+                dr.Read()
+                result = Tuple.Create<Int64,string>(dr.GetInt64(0),dr.GetString(1))
+            end
+            mreturn result
+        endmethod
+
+        ;;; <summary>
+        ;;; Delete a message by ID
+        ;;; </summary>
+        ;;; <param name="MessageID">Message ID to delete</param>
+        ;;; <returns>True on success</returns>
+        public method DeleteMessage, boolean
+            required in MessageID, Int64
+        proc
+            data ok = true
+            disposable data cmd = connection.CreateCommand()
+            cmd.CommandText = String.Format("DELETE FROM Messages WHERE MessageID={0};",MessageID)
+            try
+            begin
+                cmd.ExecuteNonQuery()
+            end
+            catch (e, @Exception)
+            begin
+                ok = false
+            end
+            endtry
+            mreturn ok
+        endmethod
+    
+        ;;; <summary>
+        ;;; Delete all messages
+        ;;; </summary>
+        ;;; <returns>True on success</returns>
+        public method DeleteAllMessages, boolean
+        proc
+            data ok = true
+            disposable data cmd = connection.CreateCommand()
+            cmd.CommandText = "DELETE FROM Messages;"
+            try
+            begin
+                cmd.ExecuteNonQuery()
+            end
+            catch (e, @Exception)
+            begin
+                ok = false
+            end
+            endtry
+            mreturn ok
+        endmethod
+    
+    endclass
+
+endnamespace
