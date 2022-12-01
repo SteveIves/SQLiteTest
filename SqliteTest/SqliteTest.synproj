@@ -23,8 +23,5 @@
     <Content Include="LICENSE.TXT">
       <SubType>Content</SubType>
     </Content>
-    <Content Include="README.MD">
-      <SubType>Content</SubType>
-    </Content>
   </ItemGroup>
 </Project>
